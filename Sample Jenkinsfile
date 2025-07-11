@@ -1,0 +1,58 @@
+pipeline {
+    agent any
+
+    environment {
+        BRANCH_NAME = "main"
+        API_DIR = "app\\api"
+        DOCKERFILE_DIR = "."
+        DOCKERFILE_NAME = "Dockerfile.staging"
+        IMAGE_NAME = "911954/fanfliks-sample:${BUILD_NUMBER}"
+        OUTPUT = "${WORKSPACE}\\publish"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: "${BRANCH_NAME}", 
+                    url: 'https://github.com/Amol-spec/fanfliks-sample.git',
+                    credentialsId: 'GithubTokenNew'
+            }
+        }
+        stage('Publish .NET API') {
+            steps {
+                dir("${API_DIR}") {
+                    bat """
+                    dotnet publish -c Release -o "${OUTPUT}"
+                    """
+                }
+            }
+        }
+        stage('Prepare Docker Context') {
+            steps {
+                bat 'xcopy /E /I /Y "${OUTPUT}\\*" "${DOCKERFILE_DIR}\\"'
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                dir("${DOCKERFILE_DIR}") {
+                    bat 'docker build -f ${DOCKERFILE_NAME} -t ${IMAGE_NAME} .'
+                }
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    bat 'echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin'
+                    bat 'docker push ${IMAGE_NAME}'
+                }
+            }
+        }
+        stage('Update K8s Deployment') {
+            steps {
+                withCredentials([file(credentialsId: 'teleport-kubeconfig', variable: 'KUBECONFIG')]) {
+                    bat 'kubectl --kubeconfig=%KUBECONFIG% set image deployment/fanfliks-api fanfliks-api=${IMAGE_NAME} --record'
+                }
+            }
+        }
+    }
+}
