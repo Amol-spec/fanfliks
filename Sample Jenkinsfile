@@ -2,57 +2,59 @@ pipeline {
     agent any
 
     environment {
-        BRANCH_NAME = "main"
-        API_DIR = "app\\api"
-        DOCKERFILE_DIR = "."
-        DOCKERFILE_NAME = "Dockerfile.staging"
-        IMAGE_NAME = "911954/fanfliks-sample:${BUILD_NUMBER}"
-        OUTPUT = "${WORKSPACE}\\publish"
+        DOTNET_PROJECT_DIR = 'C:\Users\amol.gajakosh\Documents\GitHub\AMPProjects\fanfliks\api'
+        DOCKER_CONTEXT_DIR = 'C:\Users\amol.gajakosh\Documents\GitHub\AMPProjects\fanfliks\api'
+        PUBLISH_DIR = "${WORKSPACE}/AMPProjects/api/bin/Release/net8.0/publish"
+        IMAGE_NAME = "911954/fanfliks-api:${BUILD_NUMBER}"
+        K8S_DEPLOYMENT = "fanfliks-api"
+        NAMESPACE = "default" // change if using a different namespace
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Branch') {
             steps {
-                git branch: "${BRANCH_NAME}", 
-                    url: 'https://github.com/Amol-spec/fanfliks-sample.git',
-                    credentialsId: 'GithubTokenNew'
+                git branch: 'main', url: 'https://https://github.com/Amol-spec/fanfliks-ci-cd.git'
             }
         }
-        stage('Publish .NET API') {
+
+        stage('Publish .NET App') {
             steps {
-                dir("${API_DIR}") {
+                dir("${DOTNET_PROJECT_DIR}") {
+                    bat "dotnet publish -c Release"
+                }
+            }
+        }
+
+        stage('Prepare Docker Context') {
+            steps {
+                script {
+                    bat "xcopy /E /I /Y \"${PUBLISH_DIR}\" \"${DOCKER_CONTEXT_DIR}/publish\""
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir("${DOCKER_CONTEXT_DIR}") {
+                    bat "docker build -t ${IMAGE_NAME} ."
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                bat "docker push ${IMAGE_NAME}"
+            }
+        }
+
+        stage('Update K8s Deployment') {
+            steps {
+                script {
+                    // Patch the deployment to use the new image
                     bat """
-                    dotnet publish -c Release -o "${OUTPUT}"
+                    kubectl set image deployment/${K8S_DEPLOYMENT} fanfliks-api=${IMAGE_NAME} --namespace=${NAMESPACE}
                     """
                 }
             }
         }
-        stage('Prepare Docker Context') {
-            steps {
-                bat 'xcopy /E /I /Y "${OUTPUT}\\*" "${DOCKERFILE_DIR}\\"'
-            }
-        }
-        stage('Build Docker Image') {
-            steps {
-                dir("${DOCKERFILE_DIR}") {
-                    bat 'docker build -f ${DOCKERFILE_NAME} -t ${IMAGE_NAME} .'
-                }
-            }
-        }
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    bat 'echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin'
-                    bat 'docker push ${IMAGE_NAME}'
-                }
-            }
-        }
-        stage('Update K8s Deployment') {
-            steps {
-                withCredentials([file(credentialsId: 'teleport-kubeconfig', variable: 'KUBECONFIG')]) {
-                    bat 'kubectl --kubeconfig=%KUBECONFIG% set image deployment/fanfliks-api fanfliks-api=${IMAGE_NAME} --record'
-                }
-            }
-        }
     }
-}
