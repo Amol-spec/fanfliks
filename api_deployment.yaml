@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fanfliks-api
+  namespace: fanfliks
+spec:
+  selector:
+    matchLabels:
+      app: fanfliks-api
+  template:
+    metadata:
+      labels:
+        app: fanfliks-api
+    spec:
+      imagePullSecrets:
+        - name: docker-hub
+      containers:
+        - name: fanfliks-api
+          image: mindmatrix/fanfliks:api-1.0.1
+          resources:
+            limits:
+              memory: "1024Mi"
+              cpu: "2000m"
+          # readinessProbe:
+          #   httpGet:
+          #     path: /ready
+          #     port: 5431
+          #   initialDelaySeconds: 5
+          #   periodSeconds: 10
+          # livenessProbe:
+          #   httpGet:
+          #     path: /live
+          #     port: 5431
+          #   initialDelaySeconds: 15
+          #   periodSeconds: 20
+          ports:
+            - containerPort: 7001
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/appsettings.json
+              subPath: appsettings.json
+      volumes:
+        - name: config-volume
+          configMap:
+            name: fanfliks-api-config
