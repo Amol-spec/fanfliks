@@ -1,8 +1,0 @@
-fanfliks-sample/
-├── app/
-│   └── api/
-│       ├── FanfliksSampleApi.csproj
-│       └── Program.cs
-├── Dockerfile.staging
-├── Jenkinsfile
-└── .gitignore
